@@ -1,3 +1,7 @@
-# Copyright 2017 Komit <http://komit-consulting.com>
-# License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl.html).
-from . import wizard
+# -*- coding: utf-8 -*-
+##############################################################################
+# For copyright and license notices, see __manifest__.py file in module root
+# directory
+##############################################################################
+from . import models
+from .hooks import pre_init_hook

@@ -5,36 +5,35 @@ from openerp.exceptions import ValidationError
 class AccountInvoice(models.Model):
     _inherit = 'account.invoice'
 
-    old_currency_id = fields.Many2one('res.currency')
+    @api.model
+    def _default_custom_currency_rate(self):
+        index_based_currency = (
+            self.env.user.company_id.index_based_currency_id)
+        if not index_based_currency:
+            return 1
+        return index_based_currency._convert(
+            1, self.env.user.company_id.currency_id, self.env.user.company_id,
+            fields.Date.today())
+
+    old_currency_id = fields.Many2one(
+        'res.currency', help="The previous currency used")
+    index_based_currency_id = fields.Many2one(
+        'res.currency',
+        related='company_id.index_based_currency_id',
+        help="Currency used por reporting purposes",
+        readonly=True)
     custom_rate = fields.Float(
-        compute='_compute_custome_rate_currency',
-        inverse='_inverse_custom_rate_currency',
-        required=True, help="Set new currency rate to apply on the invoice\n."
+        default=_default_custom_currency_rate,
+        required=True,
+        help="Set new currency rate to apply on the invoice\n."
         "This rate will be taken in order to convert amounts between the "
         "currency on the invoice and MX currency",
-        store=True)
+        copy=True)
 
     @api.model
     def create(self, values):
-        values['old_currency_id'] = values['currency_id']
-        return  super(AccountInvoice, self).create(values)
-
-    @api.multi
-    def _inverse_custom_rate_currency(self):
-        for inv in self:
-            pass
-
-    @api.depends('currency_id')
-    @api.multi
-    def _compute_custome_rate_currency(self):
-        for inv in self:
-            custom_rate = 1.0
-            if inv.currency_id.name != 'MXN':
-                ctx = dict(company_id=inv.company_id.id, date=inv.date_invoice)
-                mxn = self.env.ref('base.MXN').with_context(ctx)
-                invoice_currency = inv.currency_id.with_context(ctx)
-                custom_rate = invoice_currency.compute(1, mxn, False)
-            inv.custom_rate = custom_rate
+        values['old_currency_id'] = values.get('currency_id')
+        return super(AccountInvoice, self).create(values)
 
     @api.multi
     def action_account_change_currency(self):
@@ -84,7 +83,7 @@ class AccountInvoice(models.Model):
                     raise ValidationError(
                         _("The conversion to %s is automatic.\nIt's not needed"
                           " change currency vaulue, just press the 'Change' "
-                          "button.")% new_currency.name)
+                          "button.") % new_currency.name)
                 # Second Case
                 if (old_currency != c_currency and old_currency != new_currency
                         and c_currency not in (old_currency, new_currency)):
@@ -109,4 +108,27 @@ class AccountInvoice(models.Model):
             inv.compute_taxes()
             message = _("Currency changed from %s to %s with rate %s") % (
                 old_currency.name, new_currency.name, custom_rate)
-            inv.message_post(message)
+            inv.message_post(body=message)
+
+    @api.multi
+    def finalize_invoice_move_lines(self, move_lines):
+        res = super(AccountInvoice, self).finalize_invoice_move_lines(
+            move_lines)
+        for line in res:
+            line[2]['custom_rate'] = self.custom_rate
+            line[2]['index_based_currency_rate'] = (
+                self.index_based_currency_id._convert(
+                    1, self.company_currency_id, self.company_id,
+                    self.date_invoice))
+        return res
+
+
+class AccountMoveLine(models.Model):
+    _inherit = 'account.move.line'
+
+    custom_rate = fields.Float(
+        help="This rate will be taken in order to convert amounts between the "
+        "currency on the invoice and MXN currency")
+    index_based_currency_rate = fields.Float(
+        help="This rate will be taken in order to convert amounts between the "
+        "Index Based Currency and the Company Curreny")
