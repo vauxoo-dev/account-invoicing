@@ -1,5 +1,4 @@
 import logging
-from openerp import SUPERUSER_ID, api
 
 _logger = logging.getLogger(__name__)
 

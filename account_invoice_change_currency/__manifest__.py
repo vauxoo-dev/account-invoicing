@@ -1,20 +1,20 @@
-# -*- coding: utf-8 -*-
-# © 2017 Vauxoo, S.A. de C.V.
-# License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
-
+# Copyright 2017 Komit <http://komit-consulting.com>
+# License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl.html).
 {
-    'author': 'ADHOC SA,Odoo Community Association (OCA), Vauxoo',
+    'name': 'Account Invoice - Change Currency',
+    'version': '12.0.1.1.0',
     'category': 'Accounting & Finance',
-    'demo_xml': [],
-    'depends': ['account'],
-    'installable': True,
-    'name': 'Account Invoice Change Currency',
-    'test': [],
-    'data': [
-        'views/invoice_view.xml',
+    'summary': 'Allows to change currency of Invoice by wizard',
+    'author': 'Komit Consulting, Odoo Community Association (OCA), Vauxoo',
+    'website': 'https://github.com/OCA/account-invoicing',
+    'license': 'AGPL-3',
+    'depends': [
+        'account',
     ],
-    'version': '12.0.0.0.0',
-    'website': 'www.adhoc.com.ar, www.vauxoo.com',
+    'data': [
+        'security/security.xml',
+        'views/account_invoice.xml',
+    ],
     'pre_init_hook': 'pre_init_hook',
-    'license': 'AGPL-3'
+    "installable": True
 }

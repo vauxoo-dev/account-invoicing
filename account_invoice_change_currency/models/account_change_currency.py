@@ -1,5 +1,5 @@
-from openerp import fields, models, api, _
-from openerp.exceptions import ValidationError
+from odoo import fields, models, api, _
+from odoo.exceptions import ValidationError, UserError
 
 
 class AccountInvoice(models.Model):
@@ -20,14 +20,14 @@ class AccountInvoice(models.Model):
     index_based_currency_id = fields.Many2one(
         'res.currency',
         related='company_id.index_based_currency_id',
-        help="Currency used por reporting purposes",
+        help="Currency used for reporting purposes",
         readonly=True)
     custom_rate = fields.Float(
         default=_default_custom_currency_rate,
         required=True,
         help="Set new currency rate to apply on the invoice\n."
         "This rate will be taken in order to convert amounts between the "
-        "currency on the invoice and MX currency",
+        "currency on the invoice and company currency",
         copy=True)
 
     @api.model
@@ -59,6 +59,12 @@ class AccountInvoice(models.Model):
                 MXN To USD
         """
         for inv in self:
+            if inv.state not in ['draft', 'cancel']:
+                # To ensure that we can not change the currency if
+                # there already has some move lines
+                raise UserError(_(
+                    "Invoice state must be in draft or cancelled "
+                    "in order to change currency."))
             ctx = dict(company_id=inv.company_id.id, date=inv.date_invoice)
             inv = inv.with_context(ctx)
             old_currency = inv.old_currency_id
