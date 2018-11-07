@@ -15,12 +15,15 @@ class AccountInvoice(models.Model):
                 continue
             currency = invoice.with_context(
                 date=invoice.date_invoice or fields.Date.today()).currency_id
+            rate = old_currency_id._get_conversion_rate(
+                old_currency_id, invoice.currency_id, invoice.company_id,
+                invoice.date_invoice or fields.Date.today())
             tracking_value_ids = [
                 [0, 0, track.create_tracking_values(
                     currency, currency, 'currency_id',
                     self.fields_get(['currency_id'])['currency_id'], 100)],
                 [0, 0, track.create_tracking_values(
-                    currency.rate, currency.rate,
+                    rate, rate,
                     'rate',
                     currency.fields_get(['rate'])['rate'], 100)],
             ]
