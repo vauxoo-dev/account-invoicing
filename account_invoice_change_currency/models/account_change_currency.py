@@ -16,6 +16,8 @@ class AccountInvoice(models.Model):
     @api.multi
     def action_account_change_currency(self):
         track = self.env['mail.tracking.value']
+        precision = self.env['decimal.precision'].precision_get(
+            'Payment Terms')
         today = fields.Date.today()
         for invoice in self.filtered(lambda x: x.state == 'draft'):
             ctx = {'company_id': invoice.company_id.id,
@@ -33,16 +35,13 @@ class AccountInvoice(models.Model):
                     invoice.date_invoice or today) if from_currency else None
             if (old_rate_currency == currency and new_rate
                     and old_rate and float_compare(
-                        new_rate, old_rate, currency.rounding) == 0):
+                        new_rate, old_rate, precision_digits=precision) == 0):
                 continue
             rate = currency.with_context(**ctx)._get_conversion_rate(
                 from_currency, currency, invoice.company_id,
                 invoice.date_invoice or today)
             if from_currency == currency and new_rate != old_rate:
-                currency._cache['rate'] = new_rate / old_rate
-                rate = currency.with_context(**ctx)._get_conversion_rate(
-                    currency_skip, currency, invoice.company_id,
-                    invoice.date_invoice or today)
+                rate = new_rate / old_rate
             if from_currency != currency:
                 rate = new_rate
             tracking_value_ids = [
@@ -60,6 +59,7 @@ class AccountInvoice(models.Model):
                 line.price_unit *= rate
             for tax in invoice.tax_line_ids:
                 tax.amount *= rate
+            invoice.date_invoice = today
 
     @api.onchange('currency_id')
     def onchange_currency(self):
