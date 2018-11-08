@@ -1,6 +1,7 @@
 # Copyright 2018 Komit <http://komit-consulting.com>
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl.html).
 from odoo import fields
+from odoo.tools import float_compare
 import odoo.tests.common as common
 
 
@@ -9,6 +10,8 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
     def setUp(self):
         super(TestAccountInvoiceChangeCurrency, self).setUp()
 
+        self.precision = self.env['decimal.precision'].precision_get(
+            'Payment Terms')
         res_users_account_manager = self.env.ref(
             'account.group_account_manager')
         self.manager = self.env['res.users'].with_context({
@@ -103,10 +106,12 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
 
     def test_change_invoice_currency(self):
         inv = self.create_simple_invoice(fields.Date.today())
+        inv._onchange_currency_change_rate()
         before_curr = inv.currency_id
         before_amount = inv.amount_total
         after_curr = self.env.ref('base.USD')
         inv.write({'currency_id': after_curr.id})
+        inv._onchange_currency_change_rate()
         inv.action_account_change_currency()
         expected_value = before_curr._convert(
             before_amount, after_curr, inv.company_id, fields.Date.today())
@@ -117,11 +122,38 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
 
     def test_change_validated_invoice_currency(self):
         inv = self.create_simple_invoice(fields.Date.today())
+        inv._onchange_currency_change_rate()
         before_amount = inv.amount_total
         inv.action_invoice_open()
         # Make sure that we can not change the currency after validated:
         inv.write({'currency_id': self.env.ref('base.USD').id})
+        inv._onchange_currency_change_rate()
         inv.action_account_change_currency()
         self.assertEqual(
             inv.amount_total, before_amount,
+            'Total amount of invoice does not equal to expected value!!!')
+
+    def test_create_invoice_update_currency(self):
+        inv = self.create_simple_invoice(fields.Date.today())
+        before_amount = inv.amount_total
+        inv._onchange_currency_change_rate()
+        inv.action_account_change_currency()
+        self.assertEqual(
+            inv.amount_total, before_amount,
+            'Amount must remain the same, because no currency changes')
+
+    def test_custom_rate_update_currency(self):
+        inv = self.create_simple_invoice(fields.Date.today())
+        inv._onchange_currency_change_rate()
+        before_amount = inv.amount_total
+        after_curr = self.env.ref('base.USD')
+        custom_rate = 1.13208
+        inv.write({'currency_id': after_curr.id, 'custom_rate': custom_rate})
+        inv._onchange_currency_change_rate()
+        inv.write({'custom_rate': custom_rate})
+        inv.action_account_change_currency()
+        expected_value = before_amount * custom_rate
+        # TODO: Check float comparation, 12013.64 vs 12013.632959999999
+        self.assertEqual(
+            float_compare(inv.amount_total, expected_value, self.precision), 1,
             'Total amount of invoice does not equal to expected value!!!')

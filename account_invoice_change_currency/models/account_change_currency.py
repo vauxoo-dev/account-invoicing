@@ -9,9 +9,10 @@ class AccountInvoice(models.Model):
 
     custom_rate = fields.Float(
         digits=(12, 6),
+        default=1,
         help="Set new currency rate to apply on the invoice\n."
         "This rate will be taken in order to convert amounts between the "
-        "currency on the invoice and last currency", copy=True)
+        "currency on the invoice and last currency")
 
     @api.multi
     def action_account_change_currency(self):
@@ -20,19 +21,21 @@ class AccountInvoice(models.Model):
             'Payment Terms')
         today = fields.Date.today()
         for invoice in self.filtered(lambda x: x.state == 'draft'):
-            ctx = {'company_id': invoice.company_id.id,
-                   'date': invoice.date_invoice or today}
-            currency = invoice.with_context(**ctx).currency_id
             from_currency = invoice.get_last_currency_id()
-            currency_skip = invoice.get_last_currency_id(True)
             if not from_currency:
                 continue
+            if not invoice.date_invoice:
+                invoice.date_invoice = today
+            ctx = {'company_id': invoice.company_id.id,
+                   'date': invoice.date_invoice}
+            currency = invoice.with_context(**ctx).currency_id
+            currency_skip = invoice.get_last_currency_id(True)
             old_rate_currency, old_rate = invoice.get_last_rate()
             new_rate = invoice.custom_rate
             if not invoice.custom_rate:
                 new_rate = currency.with_context(**ctx)._get_conversion_rate(
                     currency_skip, currency, invoice.company_id,
-                    invoice.date_invoice or today) if from_currency else None
+                    invoice.date_invoice) if from_currency else None
             if (old_rate_currency == currency and new_rate
                     and old_rate and float_compare(
                         new_rate, old_rate, precision_digits=precision) == 0):
@@ -40,7 +43,7 @@ class AccountInvoice(models.Model):
                     continue
                 new_rate = currency.with_context(**ctx)._get_conversion_rate(
                     currency_skip, currency, invoice.company_id,
-                    invoice.date_invoice or today) if from_currency else None
+                    invoice.date_invoice) if from_currency else None
                 if float_compare(
                         new_rate, old_rate, precision_digits=precision) == 0:
                     continue
@@ -48,7 +51,7 @@ class AccountInvoice(models.Model):
 
             rate = currency.with_context(**ctx)._get_conversion_rate(
                 from_currency, currency, invoice.company_id,
-                invoice.date_invoice or today)
+                invoice.date_invoice)
             if from_currency == currency and new_rate != old_rate:
                 rate = new_rate / old_rate
             if from_currency != currency:
@@ -68,21 +71,21 @@ class AccountInvoice(models.Model):
                 line.price_unit *= rate
             for tax in invoice.tax_line_ids:
                 tax.amount *= rate
-            invoice.date_invoice = today
 
-    @api.onchange('currency_id')
-    def onchange_currency(self):
-        lcurrency = self.get_last_currency_id()
-        if not (self.currency_id and lcurrency):
-            self.custom_rate = 0
-            return {}
+    @api.onchange('currency_id', 'date_invoice')
+    def _onchange_currency_change_rate(self):
+        last_currency = self.get_last_currency_id()
+        if last_currency == self.currency_id:
+            last_currency = self.get_last_rate()[0]
+        if not (self.currency_id and last_currency):
+            last_currency = self.company_currency_id
         today = fields.Date.today()
         ctx = {'company_id': self.company_id.id,
                'date': self.date_invoice or today}
-        self.custom_rate = lcurrency.with_context(**ctx)._get_conversion_rate(
-            lcurrency, self.currency_id, self.company_id,
-            self.date_invoice or today)
-        return {}
+        self.custom_rate = last_currency.with_context(
+            **ctx)._get_conversion_rate(
+                last_currency, self.currency_id, self.company_id,
+                self.date_invoice or today)
 
     @api.multi
     def get_last_currency_id(self, skip_update_currency=False):
