@@ -36,7 +36,16 @@ class AccountInvoice(models.Model):
             if (old_rate_currency == currency and new_rate
                     and old_rate and float_compare(
                         new_rate, old_rate, precision_digits=precision) == 0):
-                continue
+                if not invoice.custom_rate:
+                    continue
+                new_rate = currency.with_context(**ctx)._get_conversion_rate(
+                    currency_skip, currency, invoice.company_id,
+                    invoice.date_invoice or today) if from_currency else None
+                if float_compare(
+                        new_rate, old_rate, precision_digits=precision) == 0:
+                    continue
+                invoice.custom_rate = new_rate
+
             rate = currency.with_context(**ctx)._get_conversion_rate(
                 from_currency, currency, invoice.company_id,
                 invoice.date_invoice or today)
@@ -93,7 +102,7 @@ class AccountInvoice(models.Model):
     @api.multi
     def get_last_rate(self):
         self.ensure_one()
-        last_values = self.env['mail.tracking.value'].search([
+        last_values = self.env['mail.tracking.value'].sudo().search([
             ('mail_message_id', 'in', self.message_ids.ids),
             ('field', 'in', ['rate', 'currency_id']),
         ], limit=2, order='write_date desc, id desc')
