@@ -52,7 +52,7 @@ class AccountInvoice(models.Model):
             rate = currency.with_context(**ctx)._get_conversion_rate(
                 from_currency, currency, invoice.company_id,
                 invoice.date_invoice)
-            if from_currency == currency and new_rate != old_rate:
+            if from_currency == currency and old_rate and new_rate != old_rate:
                 rate = new_rate / old_rate
             if from_currency != currency:
                 rate = new_rate
@@ -76,7 +76,9 @@ class AccountInvoice(models.Model):
     def _onchange_currency_change_rate(self):
         last_currency = self.get_last_currency_id()
         if last_currency == self.currency_id:
-            last_currency = self.get_last_rate()[0]
+            last_currency = self.get_last_currency_id(True)
+            if last_currency == self.currency_id:
+                last_currency = self.get_last_rate()[0]
         if not (self.currency_id and last_currency):
             last_currency = self.company_currency_id
         today = fields.Date.today()
@@ -91,16 +93,20 @@ class AccountInvoice(models.Model):
     def get_last_currency_id(self, skip_update_currency=False):
         self.ensure_one()
         subtype_id = self.env.ref(
-            'account_invoice_change_currency.mt_currency_update').id
+            'account_invoice_change_currency.mt_currency_update')
+        subtype_create_id = self.env.ref('account.mt_invoice_created')
         domain = [
             ('mail_message_id', 'in', self.message_ids.ids),
             ('field', '=', 'currency_id'),
         ]
         if skip_update_currency:
-            domain += [('mail_message_id.subtype_id', '!=', subtype_id)]
+            domain += [('mail_message_id.subtype_id', '!=', subtype_id.id)]
         last_value = self.env['mail.tracking.value'].sudo().search(
             domain, limit=1, order='write_date desc, id desc')
-        return self.currency_id.browse(last_value.old_value_integer)
+        value = last_value.old_value_integer
+        if last_value.mail_message_id.subtype_id == subtype_create_id:
+            value = last_value.new_value_integer
+        return self.currency_id.browse(value)
 
     @api.multi
     def get_last_rate(self):
