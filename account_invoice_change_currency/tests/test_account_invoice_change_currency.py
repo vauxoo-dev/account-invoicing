@@ -163,13 +163,30 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
         before_amount = inv.amount_total
         before_curr = inv.currency_id
         custom_rate = 0.0
-        after_curr = self.env.ref('base.USD')
-        inv.write({'currency_id': after_curr.id, 'custom_rate': custom_rate})
+        usd = self.env.ref('base.USD')
+        eur = self.env.ref('base.EUR')
+        inv.write({'currency_id': usd.id, 'custom_rate': custom_rate})
         inv._onchange_currency_change_rate()
         inv.write({'custom_rate': custom_rate})
         inv.action_account_change_currency()
         expected_value = before_curr._convert(
-            before_amount, after_curr, inv.company_id, fields.Date.today())
+            before_amount, usd, inv.company_id, fields.Date.today())
         self.assertEqual(
             inv.amount_total, expected_value,
+            'Total amount of invoice does not equal to expected value!!!')
+        # Change currency and set custom rate 0
+        inv.write({'currency_id': eur.id, 'custom_rate': custom_rate})
+        inv._onchange_currency_change_rate()
+        inv.write({'custom_rate': custom_rate})
+        inv.action_account_change_currency()
+        self.assertEqual(
+            inv.amount_total, before_amount,
+            'Total amount of invoice does not equal to expected value!!!')
+        # Change Again custom rate with old_rate but now without new currency
+        inv.write({'custom_rate': inv.get_last_rate()[1]})
+        inv.action_account_change_currency()
+        expected_value = before_curr._convert(
+            before_amount, eur, inv.company_id, fields.Date.today())
+        self.assertEqual(
+            inv.amount_total, before_amount,
             'Total amount of invoice does not equal to expected value!!!')
