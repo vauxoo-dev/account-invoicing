@@ -63,7 +63,7 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
              self.env.ref('account.data_account_type_current_assets').id)],
             limit=1)
 
-    def create_simple_invoice(self, date):
+    def create_simple_invoice(self, date=False):
         invoice_lines = [
             (0, 0, {
                 'product_id': self.product_1.id,
@@ -134,7 +134,7 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
             'Total amount of invoice does not equal to expected value!!!')
 
     def test_create_invoice_update_currency(self):
-        inv = self.create_simple_invoice(fields.Date.today())
+        inv = self.create_simple_invoice()
         before_amount = inv.amount_total
         inv._onchange_currency_change_rate()
         inv.action_account_change_currency()
@@ -156,4 +156,20 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
         # TODO: Check float comparation, 12013.64 vs 12013.632959999999
         self.assertEqual(
             float_compare(inv.amount_total, expected_value, self.precision), 1,
+            'Total amount of invoice does not equal to expected value!!!')
+
+    def test_custom_rate_zero_update_currency(self):
+        inv = self.create_simple_invoice()
+        before_amount = inv.amount_total
+        before_curr = inv.currency_id
+        custom_rate = 0.0
+        after_curr = self.env.ref('base.USD')
+        inv.write({'currency_id': after_curr.id, 'custom_rate': custom_rate})
+        inv._onchange_currency_change_rate()
+        inv.write({'custom_rate': custom_rate})
+        inv.action_account_change_currency()
+        expected_value = before_curr._convert(
+            before_amount, after_curr, inv.company_id, fields.Date.today())
+        self.assertEqual(
+            inv.amount_total, expected_value,
             'Total amount of invoice does not equal to expected value!!!')
