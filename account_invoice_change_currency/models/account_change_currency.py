@@ -45,7 +45,7 @@ class AccountInvoice(models.Model):
             if (old_rate_currency == currency and new_rate
                     and old_rate and float_compare(
                         new_rate, old_rate, precision_digits=precision) == 0):
-                if not invoice.custom_rate:
+                if not invoice.custom_rate or old_rate == new_rate:
                     continue
                 new_rate = currency.with_context(**ctx)._get_conversion_rate(
                     currency_skip, currency, invoice.company_id,
