@@ -30,10 +30,11 @@ class AccountInvoice(models.Model):
             from_currency = invoice.get_last_currency_id()
             if not from_currency:
                 continue
-            if not invoice.date_invoice:
-                invoice.date_invoice = today
+            date_invoice = invoice.date_invoice
+            if not date_invoice:
+                date_invoice = today
             ctx = {'company_id': invoice.company_id.id,
-                   'date': invoice.date_invoice}
+                   'date': date_invoice}
             currency = invoice.with_context(**ctx).currency_id
             currency_skip = invoice.get_last_currency_id(True)
             old_rate_currency, old_rate = invoice.get_last_rate()
@@ -41,7 +42,7 @@ class AccountInvoice(models.Model):
             if not invoice.custom_rate:
                 new_rate = currency.with_context(**ctx)._get_conversion_rate(
                     currency_skip, currency, invoice.company_id,
-                    invoice.date_invoice) if from_currency else None
+                    date_invoice) if from_currency else None
             if (old_rate_currency == currency and new_rate
                     and old_rate and float_compare(
                         new_rate, old_rate, precision_digits=precision) == 0):
@@ -49,7 +50,7 @@ class AccountInvoice(models.Model):
                     continue
                 new_rate = currency.with_context(**ctx)._get_conversion_rate(
                     currency_skip, currency, invoice.company_id,
-                    invoice.date_invoice) if from_currency else None
+                    date_invoice) if from_currency else None
                 if float_compare(
                         new_rate, old_rate, precision_digits=precision) == 0:
                     continue
@@ -59,7 +60,7 @@ class AccountInvoice(models.Model):
 
             rate = currency.with_context(**ctx)._get_conversion_rate(
                 from_currency, currency, invoice.company_id,
-                invoice.date_invoice)
+                date_invoice)
             if from_currency == currency and old_rate and new_rate != old_rate:
                 rate = new_rate / old_rate
             if from_currency != currency:
@@ -82,6 +83,9 @@ class AccountInvoice(models.Model):
 
     @api.onchange('currency_id', 'date_invoice')
     def _onchange_currency_change_rate(self):
+        state = self.get_force_rate_state()
+        if state.new_value_integer:
+            return {}
         last_currency = self.get_last_currency_id()
         if last_currency == self.currency_id:
             last_currency = self.get_last_currency_id(True)
@@ -131,3 +135,49 @@ class AccountInvoice(models.Model):
             return (self.currency_id.browse(currency_value.old_value_integer),
                     rate_value.old_value_float)
         return self.currency_id.browse(None), None
+
+    @api.multi
+    def _toggle_forced_rate(self):
+        self.ensure_one()
+        state = self.get_force_rate_state()
+        if not state:
+            self._track_force_rate()
+            state = self.get_force_rate_state()
+        else:
+            force = False if state.new_value_integer else True
+            self._track_force_rate(force)
+
+    @api.multi
+    def get_force_rate_state(self):
+        self.ensure_one()
+        subtype_id = self.env.ref(
+            'account_invoice_change_currency.mt_force_rate')
+        domain = [
+            ('mail_message_id', 'in', self.message_ids.ids),
+            ('mail_message_id.subtype_id', '=', subtype_id.id),
+            ('field', '=', 'force_rate'),
+        ]
+        last_value = self.env['mail.tracking.value'].sudo().search(
+            domain, limit=1, order='write_date desc, id desc')
+        return last_value
+
+    @api.multi
+    def _track_force_rate(self, force=True):
+        track = self.env['mail.tracking.value']
+        force_rate_description = self.fields_get(
+            ['reconciled'])['reconciled']
+        force_rate_description.update({'string': 'Force Rate'})
+        tracking_value_ids = [
+            [0, 0, track.create_tracking_values(
+                force, force, 'force_rate',
+                force_rate_description, 100)],
+            [0, 0, track.create_tracking_values(
+                self.currency_id, self.currency_id, 'currency_id',
+                self.fields_get(['currency_id'])['currency_id'], 100)],
+            [0, 0, track.create_tracking_values(
+                self.custom_rate, self.custom_rate, 'rate',
+                self.fields_get(['custom_rate'])['custom_rate'], 100)],
+        ]
+        self.message_post(
+            subtype='account_invoice_change_currency.mt_force_rate',
+            tracking_value_ids=tracking_value_ids)
