@@ -14,6 +14,12 @@ class AccountInvoice(models.Model):
         "This rate will be taken in order to convert amounts between the "
         "currency on the invoice and last currency")
 
+    @api.model
+    def create(self, values):
+        invoice = super(AccountInvoice, self).create(values)
+        invoice._onchange_currency_change_rate()
+        return invoice
+
     @api.multi
     def action_account_change_currency(self):
         track = self.env['mail.tracking.value']
@@ -48,6 +54,8 @@ class AccountInvoice(models.Model):
                         new_rate, old_rate, precision_digits=precision) == 0:
                     continue
                 invoice.custom_rate = new_rate
+            if not old_rate_currency and currency_skip == currency:
+                continue
 
             rate = currency.with_context(**ctx)._get_conversion_rate(
                 from_currency, currency, invoice.company_id,
