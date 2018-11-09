@@ -17,6 +17,8 @@ class AccountInvoice(models.Model):
     @api.model
     def create(self, values):
         invoice = super(AccountInvoice, self).create(values)
+        if self.env.context.get('force_rate'):
+            invoice._toggle_forced_rate()
         invoice._onchange_currency_change_rate()
         return invoice
 
@@ -85,13 +87,14 @@ class AccountInvoice(models.Model):
     def _onchange_currency_change_rate(self):
         state = self.get_force_rate_state()
         if state.new_value_integer:
-            return {}
+            return
         last_currency = self.get_last_currency_id()
         if last_currency == self.currency_id:
             last_currency = self.get_last_currency_id(True)
             if last_currency == self.currency_id:
                 last_currency = self.get_last_rate()[0]
-        if not (self.currency_id and last_currency):
+        if not (self.currency_id and
+                last_currency) or self.currency_id == last_currency:
             last_currency = self.company_currency_id
         today = fields.Date.today()
         ctx = {'company_id': self.company_id.id,

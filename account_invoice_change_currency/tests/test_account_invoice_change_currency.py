@@ -63,7 +63,9 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
              self.env.ref('account.data_account_type_current_assets').id)],
             limit=1)
 
-    def create_simple_invoice(self, date=False):
+    def create_simple_invoice(self, date=False, context=None):
+        if not context:
+            context = {}
         invoice_lines = [
             (0, 0, {
                 'product_id': self.product_1.id,
@@ -82,16 +84,17 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
                 'account_analytic_id': self.analytic_account.id,
             })
         ]
-        invoice = self.env['account.invoice'].sudo(self.manager).create({
-            'partner_id': 1,
-            'account_id': self.account_account.id,
-            'type': 'in_invoice',
-            'journal_id': self.account_journal_sale.id,
-            'date_invoice': date,
-            'currency_id': self.env.ref('base.EUR').id,
-            'invoice_line_ids': invoice_lines,
-            'state': 'draft',
-        })
+        invoice = self.env['account.invoice'].sudo(self.manager).with_context(
+            **context).create({
+                'partner_id': 1,
+                'account_id': self.account_account.id,
+                'type': 'in_invoice',
+                'journal_id': self.account_journal_sale.id,
+                'date_invoice': date,
+                'currency_id': self.env.ref('base.EUR').id,
+                'invoice_line_ids': invoice_lines,
+                'state': 'draft',
+            })
         invoice_tax_line = {
             'name': 'Test Tax for Customer Invoice',
             'manual': 1,
@@ -106,7 +109,6 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
 
     def test_change_invoice_currency(self):
         inv = self.create_simple_invoice(fields.Date.today())
-        inv._onchange_currency_change_rate()
         before_curr = inv.currency_id
         before_amount = inv.amount_total
         after_curr = self.env.ref('base.USD')
@@ -122,7 +124,6 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
 
     def test_change_validated_invoice_currency(self):
         inv = self.create_simple_invoice(fields.Date.today())
-        inv._onchange_currency_change_rate()
         before_amount = inv.amount_total
         inv.action_invoice_open()
         # Make sure that we can not change the currency after validated:
@@ -136,7 +137,6 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
     def test_create_invoice_update_currency(self):
         inv = self.create_simple_invoice()
         before_amount = inv.amount_total
-        inv._onchange_currency_change_rate()
         inv.action_account_change_currency()
         self.assertEqual(
             inv.amount_total, before_amount,
@@ -144,7 +144,6 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
 
     def test_custom_rate_update_currency(self):
         inv = self.create_simple_invoice(fields.Date.today())
-        inv._onchange_currency_change_rate()
         before_amount = inv.amount_total
         after_curr = self.env.ref('base.USD')
         custom_rate = 1.13208
@@ -209,7 +208,8 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
             'company_id': inv.company_id.id,
         })
         rate = usd._get_conversion_rate(
-            usd, inv.currency_id, inv.company_id, inv.date_invoice)
+            usd, inv.currency_id, inv.company_id,
+            inv.date_invoice or fields.Date.today())
         inv.write({'custom_rate': old_rate})
         inv.action_account_change_currency()
         expected_value = before_amount * rate / old_rate
@@ -217,3 +217,15 @@ class TestAccountInvoiceChangeCurrency(common.TransactionCase):
         self.assertEqual(float_compare(
             inv.amount_total, expected_value, self.precision), -1,
             'Total amount of invoice does not equal to expected value!!!')
+
+    def test_force_custom_rate(self):
+        inv = self.create_simple_invoice(context={'force_rate': True})
+        inv2 = self.create_simple_invoice()
+        self.assertNotEqual(
+            inv.custom_rate, inv2.custom_rate,
+            'Rates must be different!')
+        inv._toggle_forced_rate()
+        inv._onchange_currency_change_rate()
+        self.assertEqual(
+            inv.custom_rate, inv2.custom_rate,
+            'Amount must remain the same, because force rate was disable')
